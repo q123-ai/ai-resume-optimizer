@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import ResumeUploader from "@/components/ResumeUploader";
 
 function Icon({ children, className = "h-5 w-5" }: { children: ReactNode; className?: string }) {
   return (
@@ -48,21 +49,10 @@ export default function Home() {
         <section aria-label="简历优化工作区" className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_40px_-16px_rgba(15,23,42,0.15)]">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4 sm:px-8">
             <span className="text-sm font-medium text-slate-700">从一份真实简历开始</span>
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-500">界面预览 · 分析功能尚未开放</span>
+            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-500">分析功能尚未开放</span>
           </div>
           <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-2 lg:gap-10">
-            <div>
-              <h2 className="text-base font-semibold">① 上传你的简历</h2>
-              <p className="mt-2 text-sm text-slate-500">支持 PDF / DOCX，最大 10MB</p>
-              <div aria-label="简历上传区域，暂未开放" className="mt-5 flex min-h-72 flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70 px-5 py-8 text-center">
-                <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-blue-600 shadow-sm">
-                  <Icon className="h-7 w-7"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4" /></Icon>
-                </span>
-                <p className="font-medium text-slate-700">拖拽简历到这里</p>
-                <button type="button" disabled className="mt-2 cursor-not-allowed text-sm font-medium text-blue-600">或点击选择文件</button>
-                <span className="mt-6 text-xs text-slate-400">上传功能将在后续阶段开放</span>
-              </div>
-            </div>
+            <ResumeUploader />
             <div>
               <h2><label htmlFor="job-description" className="text-base font-semibold">② 粘贴目标岗位 JD</label></h2>
               <p id="jd-help" className="mt-2 text-sm text-slate-500">粘贴招聘信息中的岗位职责和任职要求。</p>
