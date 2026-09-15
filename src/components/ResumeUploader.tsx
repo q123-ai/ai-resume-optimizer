@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { ParseResumeResponse } from "@/types/parse-resume";
+import ResumeStructurePreview from "./ResumeStructurePreview";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MIME_TYPES = {
@@ -179,6 +180,7 @@ export default function ResumeUploader() {
             <summary className="cursor-pointer rounded text-sm font-medium text-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600">查看解析文本</summary>
             <pre className="mt-3 max-h-80 overflow-auto rounded bg-slate-50 p-3 font-sans text-sm leading-6 whitespace-pre-wrap break-words text-slate-700">{parseResult.text}</pre>
           </details>
+          <ResumeStructurePreview rawText={parseResult.text} />
         </div>
       )}
     </div>
