@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import type { ParseResumeResponse } from "@/types/parse-resume";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const MIME_TYPES = {
@@ -13,9 +14,13 @@ export default function ResumeUploader() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseResult, setParseResult] = useState<Extract<ParseResumeResponse, { success: true }> | null>(null);
+  const parsingRef = useRef(false);
 
   function selectFile(files: FileList | null) {
     setIsDragging(false);
+    if (parsingRef.current) return;
     if (!files?.length) return;
     if (files.length > 1) {
       setError("请一次只选择一份简历。");
@@ -23,10 +28,10 @@ export default function ResumeUploader() {
     }
 
     const file = files[0];
-    const extension = file.name.split(".").pop()?.toLowerCase();
+    const extension = file.name.match(/\.([^.]+)$/)?.[1].toLowerCase();
     if (
       (extension !== "pdf" && extension !== "docx") ||
-      (file.type !== "" && file.type.toLowerCase() !== MIME_TYPES[extension])
+      (file.type !== "" && file.type.toLowerCase() !== "application/octet-stream" && file.type.toLowerCase() !== MIME_TYPES[extension])
     ) {
       setError("仅支持 PDF 或 DOCX 格式的简历。");
       return;
@@ -37,14 +42,56 @@ export default function ResumeUploader() {
     }
 
     setSelectedFile(file);
+    setParseResult(null);
     setError("");
   }
 
   function removeFile() {
     setSelectedFile(null);
+    setParseResult(null);
     setError("");
     setIsDragging(false);
     if (inputRef.current) inputRef.current.value = "";
+  }
+
+  async function parseResume() {
+    if (!selectedFile || parsingRef.current) return;
+    parsingRef.current = true;
+    setIsParsing(true);
+    setError("");
+    setParseResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", selectedFile);
+      const response = await fetch("/api/parse-resume", { method: "POST", body: form });
+      if (response.status === 413) {
+        setError("文件过大，超过当前服务接收上限，请选择较小的简历文件。");
+        return;
+      }
+      const result: unknown = await response.json();
+      if (typeof result !== "object" || result === null || !("success" in result)) {
+        setError("服务器返回异常，请稍后重试。");
+        return;
+      }
+      if (result.success === false && "error" in result && typeof result.error === "string") {
+        setError(result.error);
+      } else if (
+        response.ok && result.success === true &&
+        "fileName" in result && typeof result.fileName === "string" &&
+        "fileType" in result && (result.fileType === "pdf" || result.fileType === "docx") &&
+        "text" in result && typeof result.text === "string" &&
+        "characterCount" in result && typeof result.characterCount === "number"
+      ) {
+        setParseResult({ success: true, fileName: result.fileName, fileType: result.fileType, text: result.text, characterCount: result.characterCount });
+      } else {
+        setError("服务器返回异常，请稍后重试。");
+      }
+    } catch {
+      setError("无法连接解析服务或读取结果，请稍后重试。");
+    } finally {
+      parsingRef.current = false;
+      setIsParsing(false);
+    }
   }
 
   return (
@@ -55,6 +102,7 @@ export default function ResumeUploader() {
         ref={inputRef}
         id="resume-file"
         type="file"
+        disabled={isParsing}
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         aria-label="选择简历文件"
         aria-describedby={`resume-help${error ? " resume-error" : ""}`}
@@ -69,7 +117,7 @@ export default function ResumeUploader() {
         aria-labelledby="resume-title"
         onDragEnter={(event) => {
           event.preventDefault();
-          if (event.dataTransfer.types.includes("Files")) setIsDragging(true);
+          if (!parsingRef.current && event.dataTransfer.types.includes("Files")) setIsDragging(true);
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -86,10 +134,11 @@ export default function ResumeUploader() {
       >
         <button
           type="button"
+          disabled={isParsing}
           onClick={() => inputRef.current?.click()}
           aria-label={selectedFile ? "重新选择简历文件" : "选择简历文件"}
           aria-describedby={`resume-help${error ? " resume-error" : ""}`}
-          className="flex min-h-72 w-full cursor-pointer flex-col items-center justify-center rounded-xl px-5 py-8 text-center outline-none hover:bg-blue-50/50 focus-visible:ring-3 focus-visible:ring-blue-500"
+          className="flex min-h-72 w-full cursor-pointer flex-col items-center justify-center rounded-xl px-5 py-8 text-center outline-none hover:bg-blue-50/50 focus-visible:ring-3 focus-visible:ring-blue-500 disabled:cursor-wait"
         >
           <span className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-blue-600 shadow-sm">
             <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -107,16 +156,31 @@ export default function ResumeUploader() {
             <>
               <span className="font-medium text-slate-700">拖拽简历到这里</span>
               <span className="mt-2 text-sm font-medium text-blue-600">或点击选择文件</span>
-              <span className="mt-6 text-xs text-slate-400">文件仅保留在当前页面，不会上传到服务器</span>
+              <span className="mt-6 text-xs text-slate-400">点击测试解析后才发送到服务器，仅用于本次提取文字</span>
             </>
           )}
         </button>
         {selectedFile && (
-          <button type="button" onClick={removeFile} className="mx-auto mb-5 block cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">移除文件</button>
+          <button type="button" disabled={isParsing} onClick={removeFile} className="mx-auto mb-5 block cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-50">移除文件</button>
         )}
       </div>
       <p className="sr-only" role="status">{selectedFile ? `文件已选择：${selectedFile.name}` : "未选择简历文件"}</p>
       {error && <p id="resume-error" role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+      {selectedFile && (
+        <button type="button" disabled={isParsing} onClick={parseResume} className="mt-4 w-full cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60">
+          {isParsing ? "正在解析简历……" : "测试解析简历"}
+        </button>
+      )}
+      <p role="status" className="mt-3 text-sm text-slate-600">{isParsing ? "正在解析简历……" : parseResult ? "✓ 简历解析成功" : ""}</p>
+      {parseResult && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
+          <p className="text-sm break-all text-slate-600">{parseResult.fileName} · {parseResult.characterCount} 个字符</p>
+          <details className="mt-3">
+            <summary className="cursor-pointer rounded text-sm font-medium text-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600">查看解析文本</summary>
+            <pre className="mt-3 max-h-80 overflow-auto rounded bg-slate-50 p-3 font-sans text-sm leading-6 whitespace-pre-wrap break-words text-slate-700">{parseResult.text}</pre>
+          </details>
+        </div>
+      )}
     </div>
   );
 }
