@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import ResumeUploader from "@/components/ResumeUploader";
+import AIConnectionTest from "@/components/AIConnectionTest";
 
 function Icon({ children, className = "h-5 w-5" }: { children: ReactNode; className?: string }) {
   return (
@@ -94,6 +95,7 @@ export default function Home() {
             ))}
           </ol>
         </section>
+        {process.env.NODE_ENV === "development" && <AIConnectionTest />}
       </main>
       <footer className="border-t border-slate-200/70 px-5 py-6 text-center text-xs text-slate-400">AI 简历优化助手 · 以真实经历，走向更合适的机会</footer>
     </div>
