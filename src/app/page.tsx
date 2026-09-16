@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import ResumeUploader from "@/components/ResumeUploader";
+import JobInput from "@/components/JobInput";
 import AIConnectionTest from "@/components/AIConnectionTest";
 
 function Icon({ children, className = "h-5 w-5" }: { children: ReactNode; className?: string }) {
@@ -54,11 +55,7 @@ export default function Home() {
           </div>
           <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-2 lg:gap-10">
             <ResumeUploader />
-            <div>
-              <h2><label htmlFor="job-description" className="text-base font-semibold">② 粘贴目标岗位 JD</label></h2>
-              <p id="jd-help" className="mt-2 text-sm text-slate-500">粘贴招聘信息中的岗位职责和任职要求。</p>
-              <textarea id="job-description" name="job-description" aria-describedby="jd-help" className="mt-5 block min-h-72 w-full resize-y rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-3 focus:ring-blue-100" placeholder={"请粘贴目标岗位的完整 JD，例如：\n\n岗位职责：\n1. 负责经营数据分析……\n2. 制作业务分析报告……\n\n任职要求：\n1. 熟练使用 Excel……\n2. 具备良好的数据分析能力……"} />
-            </div>
+            <JobInput />
           </div>
           <div className="px-6 pb-7 text-center sm:px-8 sm:pb-8">
             <button type="button" disabled className="inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-blue-600 px-10 py-3.5 text-sm font-semibold text-white shadow-sm sm:w-auto sm:min-w-72">
