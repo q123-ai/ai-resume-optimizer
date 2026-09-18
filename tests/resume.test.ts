@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { z } from "zod";
-import { createResumeData, validateResumeData } from "../src/lib/resume";
+import { createResumeData, validateResumeData, ResumeValidationError } from "../src/lib/resume";
 import { resumeExtractionSchema, type ResumeExtraction } from "../src/types/resume";
 
 // Entirely fictional data; never replace with a real user's resume.
@@ -59,6 +59,38 @@ test("rejects missing/fabricated/blank source excerpts and malformed fields", ()
   assert.equal(resumeExtractionSchema.safeParse({ ...empty, summary: { value: "内容" } }).success, false);
   assert.equal(resumeExtractionSchema.safeParse({ ...empty, skills: "Excel" }).success, false);
   assert.equal(resumeExtractionSchema.safeParse({ ...empty, unknownField: true }).success, false);
+});
+
+test("source evidence is anchored to raw DOCX text across safe formatting differences", () => {
+  const formattingCases = [
+    { raw: "项目经历：\r\n制作  经营分析报告", candidate: "项目经历:\n制作 经营分析报告" },
+    { raw: "技能：Excel，SQL；Power BI。", candidate: "技能:Excel,SQL;Power BI." },
+    { raw: "• 数据分析\n▪ 报表制作", candidate: "· 数据分析\n● 报表制作" },
+    { raw: "任职日期：２０２３．０９ - ２０２４．０６", candidate: "任职日期:2023.09 - 2024.06" },
+    { raw: "语言能力：Café", candidate: "语言能力：Cafe\u0301" },
+  ];
+  for (const { raw, candidate } of formattingCases) {
+    const result = createResumeData({ ...empty, summary: { value: candidate, sourceText: candidate } }, raw);
+    assert.ok(result.summary && raw.includes(result.summary.sourceText));
+    assert.equal(result.summary.value, result.summary.sourceText);
+  }
+});
+
+test("source diagnostics identify the safe field path and rule without including its value", () => {
+  const cases = [
+    [{ ...empty, summary: { value: "虚构成果", sourceText: "原文不存在的证据" } }, "summary.sourceText", "source_not_found"],
+    [{ ...empty, summary: { value: "虚构成果", sourceText: "示例大学" } }, "summary.value", "value_not_in_source"],
+  ] as const;
+  for (const [input, field, rule] of cases) {
+    assert.throws(() => createResumeData(input, rawText), (error: unknown) => {
+      assert.ok(error instanceof ResumeValidationError);
+      assert.equal(error.field, field);
+      assert.equal(error.rule, rule);
+      assert.ok(!error.message.includes("虚构成果"));
+      assert.ok(!error.message.includes("示例大学"));
+      return true;
+    });
+  }
 });
 
 test("IDs survive editing and reordering without regeneration", () => {

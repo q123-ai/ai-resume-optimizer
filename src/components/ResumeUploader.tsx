@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { ParseResumeResponse } from "@/types/parse-resume";
+import type { ResumeData } from "@/types/resume";
 import ResumeStructurePreview from "./ResumeStructurePreview";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -10,7 +11,14 @@ const MIME_TYPES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
-export default function ResumeUploader() {
+type ResumeUploaderProps = {
+  disabled?: boolean;
+  showDevelopmentTools?: boolean;
+  onFileChange?: (file: File | null) => void;
+  onStructuredResumeChange?: (data: ResumeData | null) => void;
+};
+
+export default function ResumeUploader({ disabled = false, showDevelopmentTools = false, onFileChange, onStructuredResumeChange }: ResumeUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState("");
@@ -21,8 +29,12 @@ export default function ResumeUploader() {
 
   function selectFile(files: FileList | null) {
     setIsDragging(false);
-    if (parsingRef.current) return;
+    if (parsingRef.current || disabled) return;
     if (!files?.length) return;
+    setSelectedFile(null);
+    setParseResult(null);
+    onFileChange?.(null);
+    onStructuredResumeChange?.(null);
     if (files.length > 1) {
       setError("请一次只选择一份简历。");
       return;
@@ -44,12 +56,16 @@ export default function ResumeUploader() {
 
     setSelectedFile(file);
     setParseResult(null);
+    onFileChange?.(file);
+    onStructuredResumeChange?.(null);
     setError("");
   }
 
   function removeFile() {
     setSelectedFile(null);
     setParseResult(null);
+    onFileChange?.(null);
+    onStructuredResumeChange?.(null);
     setError("");
     setIsDragging(false);
     if (inputRef.current) inputRef.current.value = "";
@@ -61,6 +77,7 @@ export default function ResumeUploader() {
     setIsParsing(true);
     setError("");
     setParseResult(null);
+    onStructuredResumeChange?.(null);
     try {
       const form = new FormData();
       form.append("file", selectedFile);
@@ -103,7 +120,7 @@ export default function ResumeUploader() {
         ref={inputRef}
         id="resume-file"
         type="file"
-        disabled={isParsing}
+        disabled={isParsing || disabled}
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         aria-label="选择简历文件"
         aria-describedby={`resume-help${error ? " resume-error" : ""}`}
@@ -118,7 +135,7 @@ export default function ResumeUploader() {
         aria-labelledby="resume-title"
         onDragEnter={(event) => {
           event.preventDefault();
-          if (!parsingRef.current && event.dataTransfer.types.includes("Files")) setIsDragging(true);
+          if (!parsingRef.current && !disabled && event.dataTransfer.types.includes("Files")) setIsDragging(true);
         }}
         onDragOver={(event) => {
           event.preventDefault();
@@ -135,7 +152,7 @@ export default function ResumeUploader() {
       >
         <button
           type="button"
-          disabled={isParsing}
+          disabled={isParsing || disabled}
           onClick={() => inputRef.current?.click()}
           aria-label={selectedFile ? "重新选择简历文件" : "选择简历文件"}
           aria-describedby={`resume-help${error ? " resume-error" : ""}`}
@@ -157,30 +174,30 @@ export default function ResumeUploader() {
             <>
               <span className="font-medium text-slate-700">拖拽简历到这里</span>
               <span className="mt-2 text-sm font-medium text-blue-600">或点击选择文件</span>
-              <span className="mt-6 text-xs text-slate-400">点击测试解析后才发送到服务器，仅用于本次提取文字</span>
+              <span className="mt-6 text-xs text-slate-400">点击开始 AI 分析后才发送到服务器，仅用于本次分析</span>
             </>
           )}
         </button>
         {selectedFile && (
-          <button type="button" disabled={isParsing} onClick={removeFile} className="mx-auto mb-5 block cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-50">移除文件</button>
+          <button type="button" disabled={isParsing || disabled} onClick={removeFile} className="mx-auto mb-5 block cursor-pointer rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-50">移除文件</button>
         )}
       </div>
       <p className="sr-only" role="status">{selectedFile ? `文件已选择：${selectedFile.name}` : "未选择简历文件"}</p>
       {error && <p id="resume-error" role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
-      {selectedFile && (
-        <button type="button" disabled={isParsing} onClick={parseResume} className="mt-4 w-full cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60">
+      {showDevelopmentTools && selectedFile && <details className="mt-4 rounded-lg border border-dashed border-slate-200 p-3"><summary className="cursor-pointer text-xs text-slate-500">开发调试工具</summary>
+        <button type="button" disabled={isParsing || disabled} onClick={parseResume} className="mt-3 w-full cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-wait disabled:opacity-60">
           {isParsing ? "正在解析简历……" : "测试解析简历"}
         </button>
-      )}
-      <p role="status" className="mt-3 text-sm text-slate-600">{isParsing ? "正在解析简历……" : parseResult ? "✓ 简历解析成功" : ""}</p>
-      {parseResult && (
+        <p role="status" className="mt-3 text-sm text-slate-600">{isParsing ? "正在解析简历……" : parseResult ? "✓ 简历解析成功" : ""}</p>
+      </details>}
+      {showDevelopmentTools && parseResult && (
         <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
           <p className="text-sm break-all text-slate-600">{parseResult.fileName} · {parseResult.characterCount} 个字符</p>
           <details className="mt-3">
             <summary className="cursor-pointer rounded text-sm font-medium text-blue-600 focus-visible:outline-2 focus-visible:outline-blue-600">查看解析文本</summary>
             <pre className="mt-3 max-h-80 overflow-auto rounded bg-slate-50 p-3 font-sans text-sm leading-6 whitespace-pre-wrap break-words text-slate-700">{parseResult.text}</pre>
           </details>
-          <ResumeStructurePreview rawText={parseResult.text} />
+          <ResumeStructurePreview rawText={parseResult.text} onDataChange={onStructuredResumeChange} />
         </div>
       )}
     </div>

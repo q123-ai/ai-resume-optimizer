@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import OpenAI from "openai";
-import { structureResume, structureResumeRequestSchema, ResumeStructureError } from "../src/lib/structure-resume";
+import { structureResume, structureResumeWithRetry, structureResumeRequestSchema, ResumeStructureError } from "../src/lib/structure-resume";
 import type { ResumeExtraction } from "../src/types/resume";
 
 // Entirely fictional. Never use real resume text or credentials in these tests.
@@ -28,10 +28,11 @@ function mockClient(text: string, status = "completed") {
       assert.equal(body.input, rawText);
       assert.equal(body.store, false);
       assert.equal(body.reasoning.effort, "none");
-      assert.equal(body.text.format.type, "json_schema");
-      assert.equal(body.text.format.schema.additionalProperties, false);
-      assert.ok(!("id" in body.text.format.schema.properties.education.items.properties));
-      assert.ok(!("rawText" in body.text.format.schema.properties));
+      assert.deepEqual(body.text.format, { type: "json_object" });
+      assert.ok(!("response_format" in body));
+      assert.match(body.instructions, /JSON schema/);
+      assert.match(body.instructions, /"additionalProperties":false/);
+      assert.match(body.instructions, /只返回一个 JSON object/);
       assert.match(body.instructions, /不得推断/);
       return Response.json({ id: "resp_example", object: "response", status, model: "deepseek-flash", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text, annotations: [] }] }] });
     },
@@ -52,17 +53,18 @@ test("Chinese and English facts flow through SDK, Zod and program IDs without re
 });
 
 test("rejects invalid JSON, wrong schema, fabricated evidence and invented values without exposing text", async () => {
-  const outputs = [
-    "not json",
-    JSON.stringify({ education: "invalid" }),
-    JSON.stringify({ ...extraction, summary: sourced("原文不存在的成果") }),
-    JSON.stringify({ ...extraction, summary: { value: "虚构成就", sourceText: "张三" } }),
-    JSON.stringify({ ...extraction, rawText: "AI cannot own rawText" }),
-  ];
-  for (const output of outputs) {
+  const cases = [
+    ["not json", "json_parse"],
+    [JSON.stringify({ education: "invalid" }), "schema_validation"],
+    [JSON.stringify({ ...extraction, summary: sourced("原文不存在的成果") }), "source_validation"],
+    [JSON.stringify({ ...extraction, summary: { value: "虚构成就", sourceText: "张三" } }), "source_validation"],
+    [JSON.stringify({ ...extraction, rawText: "AI cannot own rawText" }), "schema_validation"],
+  ] as const;
+  for (const [output, reason] of cases) {
     const mock = mockClient(output);
     await assert.rejects(structureResume(mock.client, "deepseek-flash", "deepseek", rawText), (error: unknown) => {
       assert.ok(error instanceof ResumeStructureError);
+      assert.equal(error.reason, reason);
       assert.ok(!error.message.includes("虚构成就"));
       assert.ok(!error.message.includes("张三"));
       return true;
@@ -71,11 +73,88 @@ test("rejects invalid JSON, wrong schema, fabricated evidence and invented value
   }
 });
 
+test("source-validation diagnostics expose only field path and rule", async () => {
+  const mock = mockClient(JSON.stringify({ ...extraction, summary: { value: "虚构成就", sourceText: "张三" } }));
+  await assert.rejects(structureResume(mock.client, "deepseek-flash", "deepseek", rawText), (error: unknown) => {
+    assert.ok(error instanceof ResumeStructureError);
+    assert.equal(error.reason, "source_validation");
+    assert.equal(error.field, "summary.value");
+    assert.equal(error.rule, "value_not_in_source");
+    assert.ok(!error.message.includes("虚构成就"));
+    assert.ok(!error.message.includes("张三"));
+    return true;
+  });
+});
+
+test("accepts one complete outer JSON fence without weakening schema or evidence checks", async () => {
+  for (const language of ["json", "JSON", ""]) {
+    const mock = mockClient(`\ufeff \n\`\`\`${language}\r\n${JSON.stringify(extraction, null, 2)}\r\n\`\`\`\n `);
+    const data = await structureResume(mock.client, "deepseek-flash", "deepseek", rawText);
+    assert.equal(data.rawText, rawText);
+    assert.equal(mock.calls(), 1);
+  }
+});
+
+test("rejects prose, multiple objects, broken fences and truncated JSON without repair or retry", async () => {
+  const json = JSON.stringify(extraction);
+  for (const output of ["以下是结果：" + json, json + "\n完成。", json + json, `\`\`\`json\n${json}`, json.slice(0, -2)]) {
+    const mock = mockClient(output);
+    await assert.rejects(structureResume(mock.client, "deepseek-flash", "deepseek", rawText),
+      (error: unknown) => error instanceof ResumeStructureError && error.reason === "json_parse");
+    assert.equal(mock.calls(), 1);
+  }
+});
+
 test("rejects truncated, empty and failed outputs", async () => {
   for (const [text, status] of [[JSON.stringify(extraction), "incomplete"], ["", "completed"], ["", "failed"]]) {
     const mock = mockClient(text, status);
-    await assert.rejects(structureResume(mock.client, "deepseek-flash", "deepseek", rawText), ResumeStructureError);
+    await assert.rejects(structureResume(mock.client, "deepseek-flash", "deepseek", rawText),
+      (error: unknown) => error instanceof ResumeStructureError && error.reason === "incomplete_response");
   }
+});
+
+test("rejects an incomplete message even when the top-level response says completed", async () => {
+  const client = new OpenAI({ apiKey: "fictional-placeholder", maxRetries: 0, fetch: async () => Response.json({
+    id: "resp_example", object: "response", status: "completed", model: "deepseek-flash",
+    output: [{ type: "message", role: "assistant", status: "incomplete", content: [{ type: "output_text", text: JSON.stringify(extraction), annotations: [] }] }],
+  }) });
+  await assert.rejects(structureResume(client, "deepseek-flash", "deepseek", rawText),
+    (error: unknown) => error instanceof ResumeStructureError && error.reason === "incomplete_response");
+});
+
+test("one-click wrapper retries one contract-invalid model response with the same raw text", async () => {
+  let calls = 0;
+  const client = new OpenAI({ apiKey: "fictional-placeholder", baseURL: "https://api.deepseek.com", maxRetries: 0,
+    fetch: async (_url, options) => {
+      calls++;
+      const body = JSON.parse(String(options?.body));
+      assert.equal(body.input, rawText);
+      const text = calls === 1 ? "not json" : JSON.stringify(extraction);
+      return Response.json({ id: `resp_${calls}`, object: "response", status: "completed", model: "deepseek-flash", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text, annotations: [] }] }] });
+    },
+  });
+  const data = await structureResumeWithRetry(client, "deepseek-flash", "deepseek", rawText);
+  assert.equal(calls, 2);
+  assert.equal(data.rawText, rawText);
+});
+
+test("one-click wrapper retries at most once and never retries provider failures", async () => {
+  let invalidCalls = 0;
+  const invalidClient = new OpenAI({ apiKey: "fictional-placeholder", maxRetries: 0, fetch: async () => {
+    invalidCalls++;
+    return Response.json({ id: `resp_${invalidCalls}`, object: "response", status: "completed", model: "deepseek-flash", output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "invalid", annotations: [] }] }] });
+  } });
+  await assert.rejects(structureResumeWithRetry(invalidClient, "deepseek-flash", "deepseek", rawText),
+    (error: unknown) => error instanceof ResumeStructureError && error.reason === "json_parse");
+  assert.equal(invalidCalls, 2);
+
+  let providerCalls = 0;
+  const providerClient = new OpenAI({ apiKey: "fictional-placeholder", maxRetries: 0, fetch: async () => {
+    providerCalls++;
+    return Response.json({ error: { message: "private upstream details", type: "api_error" } }, { status: 500 });
+  } });
+  await assert.rejects(structureResumeWithRetry(providerClient, "deepseek-flash", "deepseek", rawText), OpenAI.APIError);
+  assert.equal(providerCalls, 1);
 });
 
 test("invalid request is rejected before SDK fetch", async () => {

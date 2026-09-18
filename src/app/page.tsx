@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
-import ResumeUploader from "@/components/ResumeUploader";
-import JobInput from "@/components/JobInput";
+import AnalysisWorkspace from "@/components/AnalysisWorkspace";
 import AIConnectionTest from "@/components/AIConnectionTest";
 
 function Icon({ children, className = "h-5 w-5" }: { children: ReactNode; className?: string }) {
@@ -51,22 +50,9 @@ export default function Home() {
         <section aria-label="简历优化工作区" className="rounded-2xl border border-slate-200 bg-white shadow-[0_8px_40px_-16px_rgba(15,23,42,0.15)]">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-6 py-4 sm:px-8">
             <span className="text-sm font-medium text-slate-700">从一份真实简历开始</span>
-            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-500">分析功能尚未开放</span>
+            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs text-slate-500">简历与岗位匹配分析</span>
           </div>
-          <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-2 lg:gap-10">
-            <ResumeUploader />
-            <JobInput />
-          </div>
-          <div className="px-6 pb-7 text-center sm:px-8 sm:pb-8">
-            <button type="button" disabled className="inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-blue-600 px-10 py-3.5 text-sm font-semibold text-white shadow-sm sm:w-auto sm:min-w-72">
-              <Icon><path d="m12 3 2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3L12 3Z" /></Icon>
-              开始 AI 分析
-            </button>
-            <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-slate-500">
-              <Icon className="h-3.5 w-3.5"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></Icon>
-              你的简历内容仅用于本次分析。
-            </p>
-          </div>
+          <AnalysisWorkspace />
         </section>
 
         <section id="features" aria-label="产品功能" className="grid scroll-mt-8 gap-4 pt-8 md:grid-cols-3">

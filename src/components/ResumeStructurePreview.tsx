@@ -24,7 +24,7 @@ function PreviewValue({ value }: { value: unknown }) {
   return null;
 }
 
-export default function ResumeStructurePreview({ rawText }: { rawText: string }) {
+export default function ResumeStructurePreview({ rawText, onDataChange }: { rawText: string; onDataChange?: (data: ResumeData | null) => void }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<ResumeData | null>(null);
@@ -37,6 +37,7 @@ export default function ResumeStructurePreview({ rawText }: { rawText: string })
     setIsLoading(true);
     setError("");
     setData(null);
+    onDataChange?.(null);
     try {
       const response = await fetch("/api/ai/structure-resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rawText }), signal: controller.current.signal });
       const result: unknown = await response.json();
@@ -45,6 +46,7 @@ export default function ResumeStructurePreview({ rawText }: { rawText: string })
         const validated = validateResumeData(result.resumeData);
         if (validated.rawText !== rawText) throw new Error("mismatched source");
         setData(validated);
+        onDataChange?.(validated);
       } else {
         setError("error" in result && typeof result.error === "string" ? result.error : "结构化服务返回异常，请稍后重试。");
       }
